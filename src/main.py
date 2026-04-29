@@ -110,25 +110,6 @@ class TiffColorizer(tk.Tk):
         self.canvas = tk.Canvas(self.canvas_frame, width=PREVIEW_MAX, height=PREVIEW_MAX, bg="blue")
         self.canvas.pack(fill="both", expand=True)
 
-        self.preview = tk.Canvas(self.canvas_frame, width=TILE_PREVIEW_SIZE, height=TILE_PREVIEW_SIZE, bg="black")
-        total = TILE_PREVIEW_SIZE
-        x = PREVIEW_MAX - total - 16
-        y = PREVIEW_MAX - total - 16
-        self.preview.place(x=x, y=y)
-        self.preview.pack_propagate(False)
-
-        btn_cfg = dict(text="", width=2, relief="flat", bd=0,
-                       bg="#555555", fg="#555555", activebackground="#888888",
-                       font=("TkDefaultFont", 7))
-        self.preview_btn_up = tk.Button(self.preview, text="^", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(0, -TILE_PREVIEW_SIZE))
-        self.preview_btn_up.pack(side="top")
-        self.preview_btn_down = tk.Button(self.preview, text="~", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(0, TILE_PREVIEW_SIZE))
-        self.preview_btn_down.pack(side="bottom")
-        self.preview_btn_left = tk.Button(self.preview, text="<", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(-TILE_PREVIEW_SIZE, 0))
-        self.preview_btn_left.pack(side="left")
-        self.preview_btn_right = tk.Button(self.preview, text=">", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(TILE_PREVIEW_SIZE, 0))
-        self.preview_btn_right.pack(side="right")
-
         tk.Label(left, text="Histogram").pack(anchor="w")
         self.hist_canvas = tk.Canvas(left, width=PREVIEW_MAX, height=80, bg="white")
         self.hist_canvas.pack(fill="x")
@@ -164,6 +145,26 @@ class TiffColorizer(tk.Tk):
         
         tk.Label(right, text="Color").pack(anchor="w", pady=(8, 0))
         self.hue_shift = slider("Hue Shift", -180, 180, 0.0, res=1.0)
+
+        self.preview = tk.Canvas(right, width=TILE_PREVIEW_SIZE, height=TILE_PREVIEW_SIZE, bg="black")
+        # total = TILE_PREVIEW_SIZE
+        # x = PREVIEW_MAX - total - 16
+        # y = PREVIEW_MAX - total - 16
+        # self.preview.place(x=x, y=y)
+        self.preview.pack(side="bottom")
+        self.preview.pack_propagate(False)
+
+        btn_cfg = dict(text="", width=2, relief="flat", bd=0,
+                       bg="#555555", fg="#555555", activebackground="#888888",
+                       font=("TkDefaultFont", 7))
+        self.preview_btn_up = tk.Button(self.preview, text="^", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(0, -TILE_PREVIEW_SIZE))
+        self.preview_btn_up.pack(side="top")
+        self.preview_btn_down = tk.Button(self.preview, text="~", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(0, TILE_PREVIEW_SIZE))
+        self.preview_btn_down.pack(side="bottom")
+        self.preview_btn_left = tk.Button(self.preview, text="<", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(-TILE_PREVIEW_SIZE, 0))
+        self.preview_btn_left.pack(side="left")
+        self.preview_btn_right = tk.Button(self.preview, text=">", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(TILE_PREVIEW_SIZE, 0))
+        self.preview_btn_right.pack(side="right")
 
     def _open_tiff(self):
         path = filedialog.askopenfilename(
