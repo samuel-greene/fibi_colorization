@@ -358,6 +358,7 @@ class TiffColorizer(tk.Tk):
             var.set(1.0)
         for var in (self.brightness, self.contrast, self.saturation):
             var.set(1.0)
+        self.hue_shift.set(0.0)
         self._schedule_update()
 
 
