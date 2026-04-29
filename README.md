@@ -7,6 +7,10 @@
 - 2D FFT (Fast Fourier Transform)
 - Faster saves through threading *(Medium Priority)*
 
+#### Completed:
+- Histogram log scale
+- Hue slider
+
 ```bash
 python main.py
 ```

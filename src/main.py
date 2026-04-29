@@ -18,7 +18,7 @@ def to_uint8(arr):
         a = np.zeros_like(a)
     return a.astype(np.uint8)
 
-def apply_adjustments(base_rgb, r_gain, g_gain, b_gain, brightness, contrast, saturation):
+def apply_adjustments(base_rgb, r_gain, g_gain, b_gain, brightness, contrast, saturation, hue_shift=0.0):
     img = base_rgb.astype(np.float32)
     img[:, :, 0] *= r_gain
     img[:, :, 1] *= g_gain
@@ -28,6 +28,10 @@ def apply_adjustments(base_rgb, r_gain, g_gain, b_gain, brightness, contrast, sa
     pil = ImageEnhance.Brightness(pil).enhance(brightness)
     pil = ImageEnhance.Contrast(pil).enhance(contrast)
     pil = ImageEnhance.Color(pil).enhance(saturation)
+    if hue_shift != 0.0:
+        hsv = np.array(pil.convert("HSV"), dtype=np.int16)
+        hsv[:, :, 0] = (hsv[:, :, 0] + int(hue_shift / 360 * 256)) % 256
+        pil = Image.fromarray(hsv.astype(np.uint8), "HSV").convert("RGB")
     return pil
 
 def draw_histogram(canvas, pil_img, w, h):
@@ -155,6 +159,9 @@ class TiffColorizer(tk.Tk):
         self.brightness = slider("Brightness", 0.1, 3.0, 1.0)
         self.contrast   = slider("Contrast",   0.1, 3.0, 1.0)
         self.saturation = slider("Saturation", 0.0, 3.0, 1.0)
+        
+        tk.Label(right, text="Color").pack(anchor="w", pady=(8, 0))
+        self.hue_shift = slider("Hue Shift", -180, 180, 0.0, res=1.0)
 
     def _open_tiff(self):
         path = filedialog.askopenfilename(
@@ -251,7 +258,8 @@ class TiffColorizer(tk.Tk):
                 base_arr = base_arr[:, :, :3]
 
             adj_pil = apply_adjustments(to_uint8(base_arr), r_gain, g_gain, b_gain,
-                                        brightness, contrast, saturation)
+                            brightness, contrast, saturation,
+                            self.hue_shift.get())
             adj_arr = np.array(adj_pil)
 
             if np.issubdtype(orig_dtype, np.integer):
@@ -273,7 +281,8 @@ class TiffColorizer(tk.Tk):
         return apply_adjustments(
             self.base_rgb,
             self.r_gain.get(), self.g_gain.get(), self.b_gain.get(),
-            self.brightness.get(), self.contrast.get(), self.saturation.get())
+            self.brightness.get(), self.contrast.get(), self.saturation.get(),
+            self.hue_shift.get())
 
     def _schedule_update(self):
         if self._update_job:
@@ -301,7 +310,8 @@ class TiffColorizer(tk.Tk):
             tile_pil = apply_adjustments(
                 self.preview_base_rgb,
                 self.r_gain.get(), self.g_gain.get(), self.b_gain.get(),
-                self.brightness.get(), self.contrast.get(), self.saturation.get())
+                self.brightness.get(), self.contrast.get(), self.saturation.get(),
+                self.hue_shift.get())
             pw2 = self.preview.winfo_width()  or TILE_PREVIEW_SIZE
             ph2 = self.preview.winfo_height() or TILE_PREVIEW_SIZE
             tile_pil = tile_pil.resize((pw2, ph2), Image.NEAREST)
