@@ -1,4 +1,4 @@
-## FIBI Post Process Manual Colorization (FPPMC)
+## FIBI Post Process Manual Colorization Software (FPPMCS)
 
 #### TODO:
 - High resolution preview *(High Priority)*

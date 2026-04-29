@@ -6,6 +6,8 @@ import tifffile
 import os
 
 PREVIEW_MAX = 512
+TILE_PREVIEW_SIZE = 256
+TILE_LEVEL_OFFSET = 1
 
 def to_uint8(arr):
     a = arr.astype(np.float32)
@@ -33,6 +35,7 @@ def draw_histogram(canvas, pil_img, w, h):
     arr = np.array(pil_img)
     for ch, color in enumerate(["red", "green", "blue"]):
         hist, _ = np.histogram(arr[:, :, ch], bins=64, range=(0, 255))
+        hist = np.log1p(hist)
         hist = hist / (hist.max() + 1e-6)
         pts = []
         for i, v in enumerate(hist):
@@ -94,8 +97,31 @@ class TiffColorizer(tk.Tk):
         left = tk.Frame(main)
         left.pack(side="left", fill="both", expand=True)
 
-        self.canvas = tk.Canvas(left, width=PREVIEW_MAX, height=PREVIEW_MAX, bg="gray")
-        self.canvas.pack()
+        self.canvas_frame = tk.Frame(left, width=PREVIEW_MAX, height=PREVIEW_MAX)
+        self.canvas_frame.pack();
+        self.canvas_frame.pack_propagate(False)
+
+        self.canvas = tk.Canvas(self.canvas_frame, width=PREVIEW_MAX, height=PREVIEW_MAX, bg="blue")
+        self.canvas.pack(fill="both", expand=True)
+
+        self.preview = tk.Canvas(self.canvas_frame, width=TILE_PREVIEW_SIZE, height=TILE_PREVIEW_SIZE, bg="black")
+        total = TILE_PREVIEW_SIZE
+        x = PREVIEW_MAX - total - 16
+        y = PREVIEW_MAX - total - 16
+        self.preview.place(x=x, y=y)
+        self.preview.pack_propagate(False)
+
+        btn_cfg = dict(text="", width=2, relief="flat", bd=0,
+                       bg="#555555", fg="#555555", activebackground="#888888",
+                       font=("TkDefaultFont", 7))
+        self.preview_btn_up = tk.Button(self.preview, text="^", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(0, -TILE_PREVIEW_SIZE))
+        self.preview_btn_up.pack(side="top")
+        self.preview_btn_down = tk.Button(self.preview, text="~", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(0, TILE_PREVIEW_SIZE))
+        self.preview_btn_down.pack(side="bottom")
+        self.preview_btn_left = tk.Button(self.preview, text="<", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(-TILE_PREVIEW_SIZE, 0))
+        self.preview_btn_left.pack(side="left")
+        self.preview_btn_right = tk.Button(self.preview, text=">", cnf=btn_cfg, width=1, height=1, bg="gray", command=lambda: self._move_preview_tile(TILE_PREVIEW_SIZE, 0))
+        self.preview_btn_right.pack(side="right")
 
         tk.Label(left, text="Histogram").pack(anchor="w")
         self.hist_canvas = tk.Canvas(left, width=PREVIEW_MAX, height=80, bg="white")
@@ -161,6 +187,29 @@ class TiffColorizer(tk.Tk):
             elif arr.shape[2] > 3:
                 arr = arr[:, :, :3]
             arr = to_uint8(arr)
+
+            with tifffile.TiffFile(path) as tif:
+                series = tif.series[0] if tif.series else None
+                if series and series.levels:
+                    lvl_idx = min(TILE_LEVEL_OFFSET, len(series.levels) - 1)
+                    full_page = series.levels[lvl_idx].pages[0]
+                else:
+                    full_page = tif.pages[0]
+                full_arr = full_page.asarray()
+            full_h, full_w = full_arr.shape[0], full_arr.shape[1]
+            tile_size = TILE_PREVIEW_SIZE
+            cx, cy = full_w // 2, full_h // 2
+            x0 = max(0, cx - tile_size // 2)
+            y0 = max(0, cy - tile_size // 2)
+            x1 = min(full_w, x0 + tile_size)
+            y1 = min(full_h, y0 + tile_size)
+            tile = full_arr[y0:y1, x0:x1]
+            if tile.ndim == 2:
+                tile = np.stack([tile, tile, tile], axis=-1)
+            elif tile.shape[2] > 3:
+                tile = tile[:, :, :3]
+            self.preview_base_rgb = to_uint8(tile)
+            self.preview_position = (x0, y0, x1, y1)   # pixels in full-res coords
 
             self.base_rgb = arr
             self.tiff_path = path
@@ -242,11 +291,57 @@ class TiffColorizer(tk.Tk):
         self._tk_img = ImageTk.PhotoImage(thumb)
         self.canvas.config(width=pw, height=ph)
         self.canvas.delete("all")
-        self.canvas.create_image(0, 0, anchor="nw", image=self._tk_img)
+        self.canvas.create_image(0, PREVIEW_MAX / 2, anchor="w", image=self._tk_img)
         cw = self.hist_canvas.winfo_width() or PREVIEW_MAX
         huw = self.hue_canvas.winfo_width() or PREVIEW_MAX
         draw_histogram(self.hist_canvas, thumb, cw, 80)
         draw_hue_profile(self.hue_canvas, thumb, huw, 50)
+
+        if hasattr(self, "preview_base_rgb") and self.preview_base_rgb is not None:
+            tile_pil = apply_adjustments(
+                self.preview_base_rgb,
+                self.r_gain.get(), self.g_gain.get(), self.b_gain.get(),
+                self.brightness.get(), self.contrast.get(), self.saturation.get())
+            pw2 = self.preview.winfo_width()  or TILE_PREVIEW_SIZE
+            ph2 = self.preview.winfo_height() or TILE_PREVIEW_SIZE
+            tile_pil = tile_pil.resize((pw2, ph2), Image.NEAREST)
+            self._preview_tk = ImageTk.PhotoImage(tile_pil)
+            self.preview.delete("all")
+            self.preview.create_image(0, 0, anchor="nw", image=self._preview_tk)
+
+    def _move_preview_tile(self, dx, dy):
+        if not hasattr(self, "preview_position") or self.tiff_path is None:
+            return
+        x0, y0, x1, y1 = self.preview_position
+        tile_w = x1 - x0
+        tile_h = y1 - y0
+ 
+        try:
+            with tifffile.TiffFile(self.tiff_path) as tif:
+                series = tif.series[0] if tif.series else None
+                if series and series.levels:
+                    lvl_idx = min(TILE_LEVEL_OFFSET, len(series.levels) - 1)
+                    full_page = series.levels[lvl_idx].pages[0]
+                else:
+                    full_page = tif.pages[0]
+                full_arr = full_page.asarray()
+            full_h, full_w = full_arr.shape[0], full_arr.shape[1]
+        except Exception:
+            return
+ 
+        nx0 = max(0, min(x0 + dx, full_w - tile_w))
+        ny0 = max(0, min(y0 + dy, full_h - tile_h))
+        nx1 = nx0 + tile_w
+        ny1 = ny0 + tile_h
+ 
+        tile = full_arr[ny0:ny1, nx0:nx1]
+        if tile.ndim == 2:
+            tile = np.stack([tile, tile, tile], axis=-1)
+        elif tile.shape[2] > 3:
+            tile = tile[:, :, :3]
+        self.preview_base_rgb = to_uint8(tile)
+        self.preview_position = (nx0, ny0, nx1, ny1)
+        self._schedule_update()
 
     def _reset(self):
         for var in (self.r_gain, self.g_gain, self.b_gain):
