@@ -4,6 +4,7 @@ import numpy as np
 from PIL import Image, ImageTk, ImageEnhance
 import tifffile
 import os
+import zarr
 
 PREVIEW_MAX = 512
 TILE_PREVIEW_SIZE = 256
@@ -84,6 +85,7 @@ class TiffColorizer(tk.Tk):
         self.tiff_path = None
         self.base_rgb = None
         self._update_job = None
+        self._zarr_level = None
         self._build_ui()
 
     def _build_ui(self):
@@ -195,22 +197,22 @@ class TiffColorizer(tk.Tk):
                 arr = arr[:, :, :3]
             arr = to_uint8(arr)
 
-            with tifffile.TiffFile(path) as tif:
-                series = tif.series[0] if tif.series else None
-                if series and series.levels:
-                    lvl_idx = min(TILE_LEVEL_OFFSET, len(series.levels) - 1)
-                    full_page = series.levels[lvl_idx].pages[0]
-                else:
-                    full_page = tif.pages[0]
-                full_arr = full_page.asarray()
-            full_h, full_w = full_arr.shape[0], full_arr.shape[1]
+            store = tifffile.imread(path, aszarr=True)
+            z = zarr.open(store, mode='r')
+            lvl_idx = min(TILE_LEVEL_OFFSET, len(z) - 1) if hasattr(z, '__len__') else 0
+            self._zarr_level = z[str(lvl_idx)] if hasattr(z, '__len__') else z
+            full_h, full_w = self._zarr_level.shape[0], self._zarr_level.shape[1]
+            
             tile_size = TILE_PREVIEW_SIZE
             cx, cy = full_w // 2, full_h // 2
             x0 = max(0, cx - tile_size // 2)
             y0 = max(0, cy - tile_size // 2)
             x1 = min(full_w, x0 + tile_size)
             y1 = min(full_h, y0 + tile_size)
-            tile = full_arr[y0:y1, x0:x1]
+            
+            # tile by tile loading improvement
+            tile = self._zarr_level[y0:y1, x0:x1]
+            
             if tile.ndim == 2:
                 tile = np.stack([tile, tile, tile], axis=-1)
             elif tile.shape[2] > 3:
@@ -320,31 +322,20 @@ class TiffColorizer(tk.Tk):
             self.preview.create_image(0, 0, anchor="nw", image=self._preview_tk)
 
     def _move_preview_tile(self, dx, dy):
-        if not hasattr(self, "preview_position") or self.tiff_path is None:
+        if self._zarr_level is None or not hasattr(self, "preview_position"):
             return
+        z = self._zarr_level
+        full_h, full_w = z.shape[0], z.shape[1]
         x0, y0, x1, y1 = self.preview_position
         tile_w = x1 - x0
         tile_h = y1 - y0
- 
-        try:
-            with tifffile.TiffFile(self.tiff_path) as tif:
-                series = tif.series[0] if tif.series else None
-                if series and series.levels:
-                    lvl_idx = min(TILE_LEVEL_OFFSET, len(series.levels) - 1)
-                    full_page = series.levels[lvl_idx].pages[0]
-                else:
-                    full_page = tif.pages[0]
-                full_arr = full_page.asarray()
-            full_h, full_w = full_arr.shape[0], full_arr.shape[1]
-        except Exception:
-            return
- 
+
         nx0 = max(0, min(x0 + dx, full_w - tile_w))
         ny0 = max(0, min(y0 + dy, full_h - tile_h))
         nx1 = nx0 + tile_w
         ny1 = ny0 + tile_h
- 
-        tile = full_arr[ny0:ny1, nx0:nx1]
+
+        tile = np.array(z[ny0:ny1, nx0:nx1])
         if tile.ndim == 2:
             tile = np.stack([tile, tile, tile], axis=-1)
         elif tile.shape[2] > 3:
