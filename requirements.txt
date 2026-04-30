@@ -1,0 +1,10 @@
+donfig==0.8.1.post1
+google-crc32c==1.8.0
+numcodecs==0.16.5
+numpy==2.4.4
+packaging==26.2
+pillow==12.2.0
+PyYAML==6.0.3
+tifffile==2026.4.11
+typing_extensions==4.15.0
+zarr==3.1.6
