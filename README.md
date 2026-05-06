@@ -1,6 +1,6 @@
 ## FIBI Post Process Manual Colorization Software (FPPMCS)
 
-Requirements can be found in the requirements.txt file. Create a python virtual environement from that file,
+Requirements can be found in the requirements.txt file. Create a python virtual environment from that file,
 ```bash
 # 1. Create a clean virtual environment named 'venv'
 python3 -m venv venv

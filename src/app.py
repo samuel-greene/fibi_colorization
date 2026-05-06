@@ -13,8 +13,7 @@ from widgets import NumVar
 
 PREVIEW_MAX = 512
 TILE_PREVIEW_SIZE = 256
-TILE_LEVEL_OFFSET = 1
-
+TILE_LEVEL_OFFSET = 0
 
 class TiffColorizer(tk.Tk):
     def __init__(self):
@@ -49,20 +48,16 @@ class TiffColorizer(tk.Tk):
         left = tk.Frame(parent)
         left.pack(side="left", fill="both", expand=True)
 
-        self.canvas_frame = tk.Frame(left, width=PREVIEW_MAX, height=PREVIEW_MAX)
-        self.canvas_frame.pack()
-        self.canvas_frame.pack_propagate(False)
+        self._build_tile_preview(left)
 
-        self.canvas = tk.Canvas(self.canvas_frame, width=PREVIEW_MAX, height=PREVIEW_MAX, bg="#121212")
-        self.canvas.pack(fill="both", expand=True)
-
-        tk.Label(left, text="Histogram").pack(anchor="w")
+        tk.Label(left, text="Histogram").pack(anchor="w", side="bottom")
         self.hist_canvas = tk.Canvas(left, width=PREVIEW_MAX, height=80, bg="#121212")
-        self.hist_canvas.pack(fill="x")
+        self.hist_canvas.pack(fill="x", side="bottom")
 
-        tk.Label(left, text="Hue Profile").pack(anchor="w")
+        tk.Label(left, text="Hue Profile").pack(anchor="w", side="bottom")
         self.hue_canvas = tk.Canvas(left, width=PREVIEW_MAX, height=50, bg="#121212")
-        self.hue_canvas.pack(fill="x")
+        self.hue_canvas.pack(fill="x", side="bottom")
+
 
     def _build_right_panel(self, parent):
         right = tk.Frame(parent, background="#333333")
@@ -71,22 +66,22 @@ class TiffColorizer(tk.Tk):
         def num_entry(label, from_, to, init):
             row = tk.Frame(right)
             row.pack(fill="x", pady=1)
-            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
+            tk.Label(row, text=label, width=10, anchor="e").pack(side="left")
             var = NumVar(right, init, from_, to, self._schedule_update)
             var.make_entry(row, width=8).pack(side="left")
             return var
 
         # Image adjustments
-        tk.Label(right, text="Image").pack(anchor="w", pady=(8, 0))
+        tk.Label(right, text="Image").pack(anchor="e", pady=(8, 0))
         self.brightness = num_entry("Brightness", 0.1, 3.0, 1.0)
         self.contrast   = num_entry("Contrast",   0.1, 3.0, 1.0)
         self.saturation = num_entry("Saturation", 0.0, 3.0, 1.0)
 
         # Color / hue
-        tk.Label(right, text="Color").pack(anchor="w", pady=(8, 0))
+        tk.Label(right, text="Color").pack(anchor="e", pady=(8, 0))
 
         # RGB Gain: all three on one compact row
-        tk.Label(right, text="RGB Gain").pack(anchor="w", pady=(8, 0))
+        tk.Label(right, text="RGB Gain").pack(anchor="e", pady=(8, 0))
         rgb_row = tk.Frame(right)
         rgb_row.pack(fill="x", pady=1)
 
@@ -105,7 +100,7 @@ class TiffColorizer(tk.Tk):
         self.hue_shift = num_entry("Hue Shift", -180, 180, 0.0)
 
         # Hue range filter
-        tk.Label(right, text="Hue Range (0-360)", anchor="w").pack(fill="x", pady=(0, 6))
+        tk.Label(right, text="Hue Range (0-360)", anchor="e").pack(fill="x", pady=(0, 6))
         self._hue_bar_canvas = tk.Canvas(right, width=200, height=10, bd=0, highlightthickness=0)
         self._hue_bar_canvas.pack(fill="x", pady=(0, 2))
         self._draw_hue_bar()
@@ -113,26 +108,58 @@ class TiffColorizer(tk.Tk):
         self.hue_min = num_entry("Min", 0, 360,   0.0)
         self.hue_max = num_entry("Max", 0, 360, 360.0)
         tk.Label(right, text="(out-of-range → greyscale)", font=("TkDefaultFont", 7),
-                 fg="grey").pack(anchor="w")
+                 fg="grey").pack(anchor="e")
 
-        self._build_tile_preview(right)
+        self.canvas = tk.Canvas(right, width=TILE_PREVIEW_SIZE, height=TILE_PREVIEW_SIZE, bg="#121212")
+        self.canvas.pack(fill="both", expand=True)
 
     def _build_tile_preview(self, parent):
-        self.preview = tk.Canvas(parent, width=TILE_PREVIEW_SIZE, height=TILE_PREVIEW_SIZE, bg="black")
-        self.preview.pack(side="bottom")
+        self.preview = tk.Canvas(parent, width=PREVIEW_MAX, height=PREVIEW_MAX, bg="black")
+        self.preview.pack(side="top", anchor='nw')
         self.preview.pack_propagate(False)
 
         btn_cfg = dict(text="", width=2, relief="flat", bd=0,
                        bg="#555555", fg="#555555", activebackground="#888888",
                        font=("TkDefaultFont", 7))
-        tk.Button(self.preview, text="^", cnf=btn_cfg, width=1, height=1, bg="gray",
-                  command=lambda: self._move_preview_tile(0, -TILE_PREVIEW_SIZE)).pack(side="top")
-        tk.Button(self.preview, text="~", cnf=btn_cfg, width=1, height=1, bg="gray",
-                  command=lambda: self._move_preview_tile(0,  TILE_PREVIEW_SIZE)).pack(side="bottom")
-        tk.Button(self.preview, text="<", cnf=btn_cfg, width=1, height=1, bg="gray",
-                  command=lambda: self._move_preview_tile(-TILE_PREVIEW_SIZE, 0)).pack(side="left")
-        tk.Button(self.preview, text=">", cnf=btn_cfg, width=1, height=1, bg="gray",
-                  command=lambda: self._move_preview_tile( TILE_PREVIEW_SIZE, 0)).pack(side="right")
+        tk.Button(
+            self.preview,
+            text="^",
+            cnf=btn_cfg,
+            width=1,
+            height=1,
+            bg="gray",
+            command=lambda: self._move_preview_tile(0, -self.preview_move_step)
+        ).pack(side="top")
+
+        tk.Button(
+            self.preview,
+            text="~",
+            cnf=btn_cfg,
+            width=1,
+            height=1,
+            bg="gray",
+            command=lambda: self._move_preview_tile(0, self.preview_move_step)
+        ).pack(side="bottom")
+
+        tk.Button(
+            self.preview,
+            text="<",
+            cnf=btn_cfg,
+            width=1,
+            height=1,
+            bg="gray",
+            command=lambda: self._move_preview_tile(-self.preview_move_step, 0)
+        ).pack(side="left")
+
+        tk.Button(
+            self.preview,
+            text=">",
+            cnf=btn_cfg,
+            width=1,
+            height=1,
+            bg="gray",
+            command=lambda: self._move_preview_tile(self.preview_move_step, 0)
+        ).pack(side="right")
 
     def _draw_hue_bar(self):
         """Draw a static hue-wheel colour bar as a visual reference."""
@@ -187,7 +214,11 @@ class TiffColorizer(tk.Tk):
             self._zarr_level = z[str(lvl_idx)] if hasattr(z, '__len__') else z
             full_h, full_w = self._zarr_level.shape[0], self._zarr_level.shape[1]
 
-            tile_size = TILE_PREVIEW_SIZE
+            # Higher-resolution sampling for movable preview
+            PREVIEW_SAMPLE_SCALE = 4
+
+            tile_size = TILE_PREVIEW_SIZE * PREVIEW_SAMPLE_SCALE
+
             cx, cy = full_w // 2, full_h // 2
             x0 = max(0, cx - tile_size // 2)
             y0 = max(0, cy - tile_size // 2)
@@ -195,12 +226,17 @@ class TiffColorizer(tk.Tk):
             y1 = min(full_h, y0 + tile_size)
 
             tile = self._zarr_level[y0:y1, x0:x1]
+
             if tile.ndim == 2:
                 tile = np.stack([tile, tile, tile], axis=-1)
             elif tile.shape[2] > 3:
                 tile = tile[:, :, :3]
+
             self.preview_base_rgb = to_uint8(tile)
             self.preview_position = (x0, y0, x1, y1)
+
+            # Store visible movement step separately
+            self.preview_move_step = TILE_PREVIEW_SIZE
 
             self.base_rgb = arr
             self.tiff_path = path
@@ -324,7 +360,7 @@ class TiffColorizer(tk.Tk):
                 self.hue_min.get(), self.hue_max.get())
             pw2 = self.preview.winfo_width()  or TILE_PREVIEW_SIZE
             ph2 = self.preview.winfo_height() or TILE_PREVIEW_SIZE
-            tile_pil = tile_pil.resize((pw2, ph2), Image.NEAREST)
+            tile_pil = tile_pil.resize((pw2, ph2), Image.LANCZOS)
             self._preview_tk = ImageTk.PhotoImage(tile_pil)
             self.preview.delete("all")
             self.preview.create_image(0, 0, anchor="nw", image=self._preview_tk)
