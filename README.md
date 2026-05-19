@@ -17,12 +17,12 @@ python3 src/main.py
 ```
 
 #### TODO:
-- High resolution preview *(High Priority)* (in progress)
 - Minimum and Max RGB Channels
-- ~~Histogram log scale *(High Priority)*~~(completed)
 - 2D FFT (Fast Fourier Transform)
-- Faster saves through threading *(Medium Priority)*
 
 #### Completed:
+- High resolution preview *(High Priority)* (in progress)
 - Histogram log scale
 - Hue slider
+- Faster saves through threading *(Medium Priority)*
+- ~~Histogram log scale *(High Priority)*~~(completed)

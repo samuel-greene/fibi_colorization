@@ -1,5 +1,6 @@
 donfig==0.8.1.post1
 google-crc32c==1.8.0
+imagecodecs==2026.5.10
 numcodecs==0.16.5
 numpy==2.4.4
 packaging==26.2
