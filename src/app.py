@@ -262,41 +262,114 @@ class TiffColorizer(tk.Tk):
         brightness = self.brightness.get()
         contrast   = self.contrast.get()
         saturation = self.saturation.get()
+        hue_shift  = self.hue_shift.get()
+        hue_min    = self.hue_min.get()
+        hue_max    = self.hue_max.get()
 
-        try:
-            messagebox.showinfo("Saving", "Reading full base level — may take a moment.\nClick OK to proceed.")
-            with tifffile.TiffFile(self.tiff_path) as tif:
-                series = tif.series[0] if tif.series else None
-                base_page = (series.levels[0].pages[0] if series else tif.pages[0])
-                base_arr = base_page.asarray()
-                orig_dtype = base_arr.dtype
-                other_pages = [p.asarray() for p in tif.pages[1:]]
+        from concurrent.futures import ThreadPoolExecutor
 
-            if base_arr.ndim == 2:
-                base_arr = np.stack([base_arr]*3, axis=-1)
-            elif base_arr.shape[2] > 3:
-                base_arr = base_arr[:, :, :3]
-
-            adj_pil = apply_adjustments(to_uint8(base_arr), r_gain, g_gain, b_gain,
-                                        brightness, contrast, saturation,
-                                        self.hue_shift.get(),
-                                        self.hue_min.get(), self.hue_max.get())
+        # Worker function tasked with processing an individual image block
+        def process_block(arr_chunk):
+            orig_dtype = arr_chunk.dtype
+            orig_ndim = arr_chunk.ndim
+            
+            # Isolate RGB channels
+            if orig_ndim == 2:
+                working_arr = np.stack([arr_chunk, arr_chunk, arr_chunk], axis=-1)
+            elif arr_chunk.shape[2] > 3:
+                working_arr = arr_chunk[:, :, :3]
+            else:
+                working_arr = arr_chunk
+            
+            working_arr = to_uint8(working_arr)
+            
+            # Run color transformations (Executes in C, releasing the GIL)
+            adj_pil = apply_adjustments(
+                working_arr, r_gain, g_gain, b_gain,
+                brightness, contrast, saturation,
+                hue_shift, hue_min, hue_max
+            )
             adj_arr = np.array(adj_pil)
-
+            
+            # Scale back to original depth
             if np.issubdtype(orig_dtype, np.integer):
                 max_val = np.iinfo(orig_dtype).max
-                save_base = (adj_arr.astype(np.float32) / 255.0 * max_val).astype(orig_dtype)
+                adjusted_rgb = (adj_arr.astype(np.float32) / 255.0 * max_val).astype(orig_dtype)
             else:
-                save_base = adj_arr.astype(orig_dtype)
+                adjusted_rgb = adj_arr.astype(orig_dtype)
+            
+            # Reconstruct extra channels / structural layout
+            if orig_ndim == 2:
+                return adjusted_rgb
+            elif arr_chunk.shape[2] > 3:
+                extra_channels = arr_chunk[:, :, 3:]
+                return np.concatenate([adjusted_rgb, extra_channels], axis=-1)
+            else:
+                return adjusted_rgb
 
-            with tifffile.TiffWriter(out_path, bigtiff=True) as tw:
-                tw.write(save_base)
-                for page in other_pages:
-                    tw.write(page)
+        try:
+            messagebox.showinfo("Saving", "WARNING: This could take a couple minutes...")
+            
+            with tifffile.TiffFile(self.tiff_path) as tif:
+                is_bigtiff = tif.is_bigtiff
+                
+                with tifffile.TiffWriter(out_path, bigtiff=is_bigtiff) as tw:
+                    
+                    def process_and_write_page(page, is_subifd=False):
+                        arr = page.asarray()
+                        h, w = arr.shape[0], arr.shape[1]
+                        
+                        # Pre-allocate output matrix to eliminate incremental allocation delays
+                        final_arr = np.empty_like(arr)
+                        
+                        # Subdivide image space into large blocks to maximize core throughput
+                        block_size = 4096
+                        slices = []
+                        for y in range(0, h, block_size):
+                            for x in range(0, w, block_size):
+                                slices.append((slice(y, min(y + block_size, h)), slice(x, min(x + block_size, w))))
+                        
+                        # Process chunks concurrently using a ThreadPool
+                        with ThreadPoolExecutor() as executor:
+                            futures = {executor.submit(process_block, arr[slc]): slc for slc in slices}
+                            for future in futures:
+                                slc = futures[future]
+                                final_arr[slc] = future.result()
+                        
+                        # Extract formatting specifications
+                        write_kwargs = {}
+                        if page.is_tiled:
+                            write_kwargs['tile'] = (page.tilewidth, page.tilelength)
+                        if page.compression:
+                            write_kwargs['compression'] = page.compression
+                        if hasattr(page, 'subfiletype'):
+                            write_kwargs['subfiletype'] = page.subfiletype
+                        
+                        if arr.ndim == 2:
+                            write_kwargs['photometric'] = 'rgb'
+                        elif hasattr(page, 'photometric'):
+                            write_kwargs['photometric'] = page.photometric
+                            
+                        if hasattr(page, 'planarconfig'):
+                            write_kwargs['planarconfig'] = page.planarconfig
+                        
+                        has_subifds = hasattr(page, 'subifds') and page.subifds
+                        if not is_subifd and has_subifds:
+                            write_kwargs['subifds'] = len(page.subifds)
+                        
+                        # Stream the compiled layer to disk
+                        tw.write(final_arr, **write_kwargs)
+                        
+                        if not is_subifd and has_subifds:
+                            for sub_page in page.subifds:
+                                process_and_write_page(sub_page, is_subifd=True)
 
-            messagebox.showinfo("Saved", f"Saved to:\n{out_path}")
+                    for page in tif.pages:
+                        process_and_write_page(page, is_subifd=False)
+
+            messagebox.showinfo("Saved", f"Saved successfully to:\n{out_path}")
         except Exception as e:
-            messagebox.showerror("Error", f"Could not save:\n{e}")
+            messagebox.showerror("Error", f"Could not save properly:\n{e}")
 
     # ------------------------------------------------------------------
     # Preview rendering
