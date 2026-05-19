@@ -66,22 +66,22 @@ class TiffColorizer(tk.Tk):
         def num_entry(label, from_, to, init):
             row = tk.Frame(right)
             row.pack(fill="x", pady=1)
-            tk.Label(row, text=label, width=10, anchor="e").pack(side="left")
+            tk.Label(row, text=label, width=10, anchor="w").pack(side="left")
             var = NumVar(right, init, from_, to, self._schedule_update)
             var.make_entry(row, width=8).pack(side="left")
             return var
 
         # Image adjustments
-        tk.Label(right, text="Image").pack(anchor="e", pady=(8, 0))
+        tk.Label(right, text="Image").pack(anchor="w", pady=(8, 0))
         self.brightness = num_entry("Brightness", 0.1, 3.0, 1.0)
         self.contrast   = num_entry("Contrast",   0.1, 3.0, 1.0)
         self.saturation = num_entry("Saturation", 0.0, 3.0, 1.0)
 
         # Color / hue
-        tk.Label(right, text="Color").pack(anchor="e", pady=(8, 0))
+        tk.Label(right, text="Color").pack(anchor="w", pady=(8, 0))
 
         # RGB Gain: all three on one compact row
-        tk.Label(right, text="RGB Gain").pack(anchor="e", pady=(8, 0))
+        tk.Label(right, text="RGB Gain").pack(anchor="w", pady=(8, 0))
         rgb_row = tk.Frame(right)
         rgb_row.pack(fill="x", pady=1)
 
@@ -100,7 +100,7 @@ class TiffColorizer(tk.Tk):
         self.hue_shift = num_entry("Hue Shift", -180, 180, 0.0)
 
         # Hue range filter
-        tk.Label(right, text="Hue Range (0-360)", anchor="e").pack(fill="x", pady=(0, 6))
+        tk.Label(right, text="Hue Range (0-360)", anchor="w").pack(fill="x", pady=(0, 6))
         self._hue_bar_canvas = tk.Canvas(right, width=200, height=10, bd=0, highlightthickness=0)
         self._hue_bar_canvas.pack(fill="x", pady=(0, 2))
         self._draw_hue_bar()
@@ -108,7 +108,7 @@ class TiffColorizer(tk.Tk):
         self.hue_min = num_entry("Min", 0, 360,   0.0)
         self.hue_max = num_entry("Max", 0, 360, 360.0)
         tk.Label(right, text="(out-of-range → greyscale)", font=("TkDefaultFont", 7),
-                 fg="grey").pack(anchor="e")
+                 fg="grey").pack(anchor="w")
 
         self.canvas = tk.Canvas(right, width=TILE_PREVIEW_SIZE, height=TILE_PREVIEW_SIZE, bg="#121212")
         self.canvas.pack(fill="both", expand=True)
