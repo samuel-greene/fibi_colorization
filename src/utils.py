@@ -1,6 +1,5 @@
 import numpy as np
-from PIL import Image, ImageEnhance
-
+from PIL import Image, ImageEnhance, ImageFilter
 
 def to_uint8(arr):
     a = arr.astype(np.float32)
@@ -11,25 +10,36 @@ def to_uint8(arr):
         a = np.zeros_like(a)
     return a.astype(np.uint8)
 
-
 def apply_adjustments(base_rgb, r_gain, g_gain, b_gain, brightness, contrast, saturation,
-                      hue_shift=0.0, hue_min=0.0, hue_max=360.0):
+                      hue_shift=0.0, hue_min=0.0, hue_max=360.0, luts=None, sharpen=False):
     img = base_rgb.astype(np.float32)
     img[:, :, 0] *= r_gain
     img[:, :, 1] *= g_gain
     img[:, :, 2] *= b_gain
     img = np.clip(img, 0, 255).astype(np.uint8)
+    
+    # Apply Color Channel Curves (Red, Green, Blue)
+    if luts is not None:
+        if 'Red' in luts:   img[:, :, 0] = luts['Red'][img[:, :, 0]]
+        if 'Green' in luts: img[:, :, 1] = luts['Green'][img[:, :, 1]]
+        if 'Blue' in luts:  img[:, :, 2] = luts['Blue'][img[:, :, 2]]
+    
     pil = Image.fromarray(img, "RGB")
     pil = ImageEnhance.Brightness(pil).enhance(brightness)
     pil = ImageEnhance.Contrast(pil).enhance(contrast)
     pil = ImageEnhance.Color(pil).enhance(saturation)
+    
+    # Apply Value Curve Transformation (Combined Brightness Profile)
+    if luts is not None and 'Value' in luts:
+        arr = np.array(pil)
+        arr = luts['Value'][arr]
+        pil = Image.fromarray(arr, "RGB")
+
     if hue_shift != 0.0:
         hsv = np.array(pil.convert("HSV"), dtype=np.int16)
         hsv[:, :, 0] = (hsv[:, :, 0] + int(hue_shift / 360 * 256)) % 256
         pil = Image.fromarray(hsv.astype(np.uint8), "HSV").convert("RGB")
 
-    # Hue range masking: desaturate pixels whose hue falls outside [hue_min, hue_max].
-    # Default (0, 360) means no masking — all hues pass.
     lo, hi = hue_min % 360, hue_max % 360
     if not (lo == 0.0 and hi == 0.0) and (lo, hi) != (0.0, 360.0):
         hsv8 = np.array(pil.convert("HSV"), dtype=np.float32)
@@ -37,7 +47,6 @@ def apply_adjustments(base_rgb, r_gain, g_gain, b_gain, brightness, contrast, sa
         if lo <= hi:
             in_range = (hue_deg >= lo) & (hue_deg <= hi)
         else:
-            # wraps around 0°/360° (e.g. 330→30)
             in_range = (hue_deg >= lo) | (hue_deg <= hi)
         gray = np.array(pil.convert("L"), dtype=np.uint8)
         gray_rgb = np.stack([gray, gray, gray], axis=-1)
@@ -45,8 +54,11 @@ def apply_adjustments(base_rgb, r_gain, g_gain, b_gain, brightness, contrast, sa
         result[~in_range] = gray_rgb[~in_range]
         pil = Image.fromarray(result, "RGB")
 
-    return pil
+    # Unsharp Mask implementation
+    if sharpen:
+        pil = pil.filter(ImageFilter.UnsharpMask(radius=3.5, percent=150)) # 1.5 Amount translates to 150%
 
+    return pil
 
 def draw_histogram(canvas, pil_img, w, h):
     canvas.delete("all")
@@ -60,7 +72,6 @@ def draw_histogram(canvas, pil_img, w, h):
             pts.extend([int(i / 64 * w), int(h - v * h)])
         pts.extend([w, h, 0, h])
         canvas.create_polygon(pts, fill=color, outline="", stipple="gray50")
-
 
 def draw_hue_profile(canvas, pil_img, w, h):
     import colorsys
