@@ -17,6 +17,11 @@ class TiffColorizer(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("TIFF Colorizer")
+        
+        # Set global dark theme background and text
+        self.configure(bg="#1e1e1e")
+        self.option_add("*Background", "#1e1e1e")
+        self.option_add("*Foreground", "#ffffff")
         self.tiff_path = None
         self.base_rgb = None
         self.update_job = None
@@ -24,24 +29,74 @@ class TiffColorizer(tk.Tk):
         self.zarr_level = None
         self.build_ui()
 
-    # ui setup
     def build_ui(self):
-        top = tk.Frame(self)
-        top.pack(fill="x", padx=4, pady=4)
+        top = tk.Frame(self, bg="#242424", padx=6, pady=6)
+        top.pack(fill="x")
         
-        tk.Button(top, text="Open TIFF", command=self.open_tiff).pack(side="left")
-        tk.Button(top, text="Save as New TIFF", command=self.save_tiff).pack(side="left", padx=4)
-        tk.Button(top, text="Reset", command=self.reset_ui).pack(side="left")
+        btn_style = {
+            "bg": "#383838", 
+            "fg": "white", 
+            "activebackground": "#505050", 
+            "activeforeground": "white",
+            "relief": "flat",
+            "padx": 6,
+            "pady": 2
+        }
         
-        self.file_label = tk.Label(top, text="No file loaded")
+        tk.Button(top, text="Open TIFF", command=self.open_tiff, **btn_style).pack(side="left")
+        tk.Button(top, text="Save as New TIFF", command=self.save_tiff, **btn_style).pack(side="left", padx=4)
+        tk.Button(top, text="Reset", command=self.reset_ui, **btn_style).pack(side="left")
+        
+        self.file_label = tk.Label(top, text="No file loaded", bg="#242424", fg="#cccccc")
         self.file_label.pack(side="left", padx=8)
 
-        main = tk.Frame(self)
+        # Attach bottom panel directly to self at the bottom of the window
+        self.build_bottom_info_panel(self)
+
+        # Main panel fills remaining middle space
+        main = tk.Frame(self, bg="#1e1e1e")
         main.pack(fill="both", expand=True, padx=8, pady=8)
 
         self.build_left_panel(main)
         self.build_middle_panel(main)
         self.build_right_panel(main)
+
+    def build_bottom_info_panel(self, parent):
+        info_frame = tk.LabelFrame(
+            parent,
+            text=" About the Format & Quick Guide ",
+            bg="#242424",
+            fg="#ffffff",
+            font=("TkDefaultFont", 9, "bold"),
+            padx=10,
+            pady=8
+        )
+        info_frame.pack(side="bottom", fill="x", padx=8, pady=(0, 8))
+
+        info_text = (
+            "HOW THE FORMAT WORKS:\n"
+            "• Pyramidal TIFF & Zarr Streaming: High-resolution scientific/microscopy TIFFs contain multi-level pyramid stacks. "
+            "Instead of reading full multi-gigabyte images directly into RAM, Zarr reads low-res overviews for fast preview rendering "
+            "and streams high-res tiles on demand.\n"
+            "• Real-Time LUTs: Brightness, contrast, sharpening, and color curve LUTs (Look-Up Tables) map pixel values on preview blocks "
+            "before applying full multi-threaded block processing during export.\n\n"
+            "HOW TO USE IT:\n"
+            "1. Load File: Click 'Open TIFF' in the top control bar to load a pyramidal dataset.\n"
+            "2. Inspect Tiles: Select resolution levels in the 'Tile Inspector'. Hover over edge borders and click to pan across full-res tiles.\n"
+            "3. Color Adjustments: Fine-tune Brightness, Contrast, Saturation, or select specific channels (RGB/Value) to draw custom color curves.\n"
+            "4. Export: Click 'Save as New TIFF' to apply adjustments to all pyramid levels and chunk-process the full output."
+        )
+
+        lbl = tk.Label(
+            info_frame,
+            text=info_text,
+            bg="#242424",
+            fg="#cccccc",
+            justify="left",
+            anchor="w",
+            font=("TkDefaultFont", 8)
+        )
+        lbl.pack(fill="x", expand=True)
 
     def build_left_panel(self, parent):
         left = tk.Frame(parent)
@@ -127,11 +182,10 @@ class TiffColorizer(tk.Tk):
         THICK = 45  
         self.overlay_imgs = {}
         
-        # changed so left and right take up the whole height, top/bottom fill the gap
         regions = {
             # w, h, start_x, start_y, dx, dy
-            "top": (PREVIEW_MAX - 2*THICK, THICK, THICK, 0, 0, -1),
-            "bottom": (PREVIEW_MAX - 2*THICK, THICK, THICK, PREVIEW_MAX - THICK, 0, 1),
+            "top": (PREVIEW_MAX, THICK, 0, 0, 0, -1),
+            "bottom": (PREVIEW_MAX, THICK, 0, PREVIEW_MAX - THICK, 0, 1),
             "left": (THICK, PREVIEW_MAX, 0, 0, -1, 0),
             "right": (THICK, PREVIEW_MAX, PREVIEW_MAX - THICK, 0, 1, 0)
         }
